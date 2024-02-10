@@ -23,6 +23,31 @@ const COLORS: &[image::Rgba<u8>] = &[
 
 const ICON_SIZE: u32 = 64;
 
+// -----------------------------------------------------------------------------
+//  - Configuration -
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Dimension {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub enum Modifier {
+    Square,
+    Colorized,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Configuration {
+    pub dimensions: Vec<Dimension>,
+    pub modifiers: Vec<Modifier>,
+    pub font: PathBuf,
+    pub icons: Vec<String>,
+}
+
 fn draw_font(font: Font, size: f32, color: Rgba<u8>, text: &str) -> DynamicImage {
     // -----------------------------------------------------------------------------
     //  - get the width of the font icon -
@@ -86,87 +111,87 @@ pub fn draw_circle(
 #[derive(Debug, clap::Parser)]
 pub struct Arguments {
     #[arg(long)]
-    pub width: u32,
-    #[arg(long)]
-    pub height: u32,
-    #[arg(long)]
-    pub num: usize,
-    // pub num: u32,
-    #[arg(long)]
-    pub font: PathBuf,
+    pub config: PathBuf,
     #[arg(long)]
     pub output: PathBuf,
-    #[arg(long, value_parser, value_delimiter = ' ')]
-    pub icons: Vec<String>,
 }
 
 pub fn main() {
     let args = Arguments::parse();
 
+    let config = std::fs::read_to_string(args.config).expect("load config file");
+    let config: Configuration = serde_yaml::from_str(&config).expect("deserialize config file");
+
     // -----------------------------------------------------------------------------
     //  - load the requested font -
     // -----------------------------------------------------------------------------
-    let f = std::fs::File::open(args.font).unwrap();
+    let f = std::fs::File::open(config.font).unwrap();
     let mut reader = std::io::BufReader::new(f);
     let mut buffer = Vec::new();
     reader.read_to_end(&mut buffer).unwrap();
 
     let font = Font::try_from_vec(buffer).unwrap();
 
-    let mut img = DynamicImage::new_rgba8(args.width, args.height);
-    // -----------------------------------------------------------------------------
-    //  - set background color of image -
-    // -----------------------------------------------------------------------------
-    for x in 0..img.width() {
-        for y in 0..img.height() {
-            img.put_pixel(x, y, COLOR_MONOKAI_BACKGROUND);
-        }
-    }
+    for dimension in config.dimensions {
+        let mut img = DynamicImage::new_rgba8(dimension.width, dimension.height);
+        let (width, height) = img.dimensions();
 
-    // -----------------------------------------------------------------------------
-    //  - try to place an icon on the image -
-    // -----------------------------------------------------------------------------
-    let (width, height) = img.dimensions();
-
-    let rows = (width - ICON_SIZE) / ICON_SIZE;
-    let columns = (height - ICON_SIZE) / ICON_SIZE;
-
-    let mut cells: Vec<(u32, u32)> = Vec::new();
-
-    let mut rng = fastrand::Rng::default();
-    for _ in 0..args.num {
-        let mut value = (
-            rng.u32(1..rows) * ICON_SIZE,
-            rng.u32(1..columns) * ICON_SIZE,
-        );
-        // we want to ensure that we have the configured number of icons placed, we
-        // have to repeat this until we find a value that wasn't already generated ...
-        loop {
-            if !cells.contains(&value) {
-                cells.push(value);
-                break;
-            } else {
-                value = (
-                    rng.u32(1..rows) * ICON_SIZE,
-                    rng.u32(1..columns) * ICON_SIZE,
-                );
+        // -----------------------------------------------------------------------------
+        //  - set background color of image -
+        // -----------------------------------------------------------------------------
+        for x in 0..width {
+            for y in 0..height {
+                img.put_pixel(x, y, COLOR_MONOKAI_BACKGROUND);
             }
         }
 
-        let color = rng.choice(COLORS).unwrap_or(&COLOR_MONOKAI_GREEN);
-        let circle = draw_circle(
-            *color,
-            COLOR_MONOKAI_BACKGROUND,
-            42.0,
-            font.clone(),
-            &args.icons[rng.usize(..args.icons.len())],
-        );
+        // -----------------------------------------------------------------------------
+        //  - try to place an icon on the image -
+        // -----------------------------------------------------------------------------
 
-        let x = value.0;
-        let y = value.1;
+        let rows = (width - ICON_SIZE) / ICON_SIZE;
+        let columns = (height - ICON_SIZE) / ICON_SIZE;
 
-        image::imageops::overlay(&mut img, &circle, x.into(), y.into());
+        let mut cells: Vec<(u32, u32)> = Vec::new();
+
+        let mut rng = fastrand::Rng::default();
+        for _ in 0..10 {
+            let mut value = (
+                rng.u32(1..rows) * ICON_SIZE,
+                rng.u32(1..columns) * ICON_SIZE,
+            );
+            // we want to ensure that we have the configured number of icons placed, we
+            // have to repeat this until we find a value that wasn't already generated ...
+            loop {
+                if !cells.contains(&value) {
+                    cells.push(value);
+                    break;
+                } else {
+                    value = (
+                        rng.u32(1..rows) * ICON_SIZE,
+                        rng.u32(1..columns) * ICON_SIZE,
+                    );
+                }
+            }
+
+            let color = rng.choice(COLORS).unwrap_or(&COLOR_MONOKAI_GREEN);
+            let circle = draw_circle(
+                *color,
+                COLOR_MONOKAI_BACKGROUND,
+                42.0,
+                font.clone(),
+                &config.icons[rng.usize(..config.icons.len())],
+            );
+
+            let x = value.0;
+            let y = value.1;
+
+            image::imageops::overlay(&mut img, &circle, x.into(), y.into());
+        }
+
+        let _ = img.save(args.output.join(format!(
+            "image_{}x{}.png",
+            dimension.width, dimension.height
+        )));
     }
-
-    img.save(args.output).unwrap();
 }

@@ -1,0 +1,13 @@
+dimensions:
+  - name: "desktop"
+    width: 1024
+    height: 768
+  - name: "mobile"
+    width: 2532
+    height: 1170
+modifiers:
+  - Square
+  - Colorized
+font: "./Font\ Awesome\ 6\ Free-Solid-900.otf"
+icons:
+  - 
